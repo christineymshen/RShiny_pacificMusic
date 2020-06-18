@@ -1,0 +1,331 @@
+---
+title: "Team pacific Final Project"
+author: "Yi Mi, Vidvat Ramachandran, YueMing Shen, JiaJun Song"
+output:
+  rmdformats::readthedown:
+    theme: sandstone
+    highlight: tango
+code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = F}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(knitr)
+```
+
+# 1 Project Overview
+
+As music lovers ourselves, we have created a music Shiny App. In the App we have gathered four different gadgets in the hope to help people like us to explore musics they like. We used Shiny Dashboard with 5 tabs:
+
+  - In the first tab, we briefly explain to end users on how to navigate and use the gadgets
+  - Each of the other four tabs consists of a gadget we've built
+
+In this report, we will go by each section of the App to discuss the data and methodologies we have used, as well as the outputs from the App. In the end, we discuss the limitations of this App and potential future developments. We have also enclosed a list of references for our project.
+
+You may also refer to [here](https://potatooo0928.shinyapps.io/project-pacific/) for our App.
+
+# 2 Musician
+
+In the "Musician" tab, users can search for musicians they are interested in. The App provides user with information on
+
+  - similar musicians that the user may like
+  - information on all the albums of the musician
+  - information on all the tracks of each album. We provide 30 seconds music preview for some of the tracks
+  - popularity information on the musician, the album and the tracks
+  - features analysis on the selected albums, or all of the musicians' tracks
+
+## 2.1 Data
+
+With millions of users, Spotify has a large database on music data and they provide free API to the public. All the data from this section are from Spotify API.
+
+The following data are sourced in real time from Spotify API, based on user input musician name:
+
+1. a list of musicians which are relevant to user search
+2. information on the selected musicion:
+    - number of followers
+    - image
+3. similar musicians based on Spotify's user data
+4. list of albums of the selected musician
+5. information on any selected albums:
+    - album cover image
+    - album popularity (score between 0 - 100)
+6. list of tracks of the selected album, or all tracks of the selected musician depending on user selection in the App
+7. information on any selected tracks:
+    - track popularity (score between 0 - 100)
+    - 30 seconds preview (if available)
+8. features analysis based on Spotify data in the following dimensions:
+    - `danceability`: how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+    - `energy`: a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity.
+    - `loudness`: the overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track and are useful for comparing relative loudness of tracks.
+    - `speechiness`: detects the presence of spoken words in a track. 
+    - `acousticness`: measure from 0.0 to 1.0 of whether the track is acoustic.
+    - `instrumentalness`: predicts whether a track contains no vocals. The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content. 
+    - `liveness`: Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+
+## 2.2 Method
+
+### 2.2.1 Spotify API helper functions
+
+The following helper functions were created to use Spotify APIs:
+
+1. `get_token`
+    - Spotify API token expires every an hour. We use this helper function everytime before we need to make an API call. The function will keep track of the last token-access time and refresh the token if more than one hour has passed
+2. `get_artist`
+    - to use API call to get a list of artists relevant to users' search
+    - input: musician name (user input)
+    - output: clean dataframe with information on all the relevant musicians
+    - noted that Spotify tend to return musicians based on their popularity. So when a very vague keyword is input that there are too many relevant results, we only show the first 50 results for practicality. And also hopefully this list already covers the most popular musicians that the user is likely to look for.
+3. `get_related_artists`
+    - once user has selected a musician from all the relevant musicians, this function helps get information about musicians similar to the selected musician. Similarity is based on analysis of the Spotify community’s listening history.
+    - input: musician id
+    - output: character vector with related musician names
+4. `get_album`
+    - get all the albums of the selected musician
+    - input: musician id
+    - output: clean dataframe with information on all the albums of the selected musician
+    - noted that if the number of albums is more than spotify API limit of 50, this function will automatically turn to the next page and return all the records
+    - for duplicated records (i.e., albums with exactly same name but maybe published in different markets), only unique records with the highest popularity would be kept
+5. `get_track`
+    - extract information on all the tracks for each of the albums
+    - input: output dataframe from `get_album` function
+    - output: clean dataframe with all tracks information for each album
+    - note that if there are more than 50 tracks in an album, only the first 50 will be returned
+6. `get_all_tracks`
+    - extract information on all the tracks for the selected musician. We don't use information from `get_track` function because:
+        a) `get_track` function can only return a simplified version of track data from `get_album` function output. And this data doesn't have track populatiry information
+        b) here with the artist name we can directly use Spotify search endpoint to get all the tracks which is convenient
+    - input: musician name
+    - output: clean datafram with information of all the tracks of the selected musician
+    - note that this function is able to automatically call the API to get all tracks information when number of tracks is greater than Spotify API limit of 50
+    - for duplicated records (i.e., tracks with exactly same name but maybe published in different markets), only unique records with the highest popularity would be kept
+7. `get_multi_features`
+    - get features for multiple tracks
+    - input: character vector of all track ids
+    - output: clean dataframe with features analysis for all the tracks
+    - note that each API call allows for at most 100 tracks, this function is able to automatically make multiple API calls to get information on all tracks
+8. Throughout these functions, `asserthat` is used for errortracking and debugging
+
+### 2.2.2 Shiny App
+
+The following techniques/ functions/ widgets were used to build the Shiny App for this tab:
+
+1. `ConditionalPanel` for the sidebar
+2. reactive functions such as `reactive`, `observeEvent` and `isolate` to have dynamic user interactions
+3. widgets such as `selectinput box`, `actionButton`, `valueBox`, `tabBox` and `plotOutput` etc.
+4. functions/ tools that were not covered in class:
+    - `req`: to make sure dynamic components have been refreshed (i.e., not NULL) before rendering the next ui
+    - the use of uiOutput for dynamic App
+    - additonal packages like `shinyjs` and `shinyalert`
+    - used `plotly` to create interactive plots
+    - used progress bar for plot rendering section
+
+## 2.3 Output
+
+Refer to "Musician" tab of the Shiny App. Once users input a musician name and click search, they would be led to further confirm the selected musician and then provided with the following information:
+
+  - musician popularity
+  - other related musicians
+  - album information
+  - tracks information with 30 seconds preview (if available)
+  - list of all tracks (refer to `Tracks`tab)
+  - features analysis on selected album or all tracks
+
+# 3 Song Search
+
+This part of the app is useful to get songs with certain features. For example, looking for instrumental songs can be hard, especially if we are also looking at specific genres or the mood of the song. This app uses the `audio-features` sub-endpoint of the spotify API to get the song features and find tracks which are close to what we want.
+
+## 3.1 Data
+
+We chose 26 categories/genres obtained from those obtained from the spotify api. We obtained around 50000 tracks, with their audio features to work on. The recommendations for the user once they enter the features are selected from these tracks. We saved the data in the file `tracks.Rdata` in the `data` folder.
+
+## 3.2 Method
+
+### 3.2.1 Data scraping
+
+We scraped the tracks data from the spotify API. The code is in the file `spotify_scrape.R`.
+
+1. We started with getting the categories present, from the `Browse` endpoint. The result obtained had more than 40 categories, and we manually selected 26 out of those as the other categories were not genres.
+2. We then obtained the playlists for each of the above categories. We got 50 playlists for the categories if they had at least that many, otherwise we obtained all the playlists. We used the same endpoint as above. The end result was a list of playlist ids for each category.
+3. We obtained the tracks in each playlist using the above playlist ids using the `playlists` endpoint. This also gave us the `popularity` value of each track. Since, a track can be in multiple playlists, we decided to remove the duplicate tracks within each category, we didn't remove duplicate tracks across categories as we will also be using categories to search for tracks later.
+4. Finally, we used the `tracks` endpoint to get the audio-features for all the above tracks and then merged everything together into a single dataframe, then saved the result to a file for later use.
+
+### 3.2.2 Finding best songs
+
+The objective here was to find songs that were the closest in the features specified by the user. We used a distance metric which was a mix of the gower distance metric and one custom metric we specified ourselves. 
+
+1. In distance calculation, we first filtered the tracks for the categories the user selected, then among those tracks we used the features `popularity`, `danceability`, `energy`, `acousticness`, `instrumentalness`, `liveness` and `tempo`. Among, these everything except `popularity` can be specified by the user, with `danceability`, `instrumentalness` and `liveness` being input as binary(both extremes of 0 and 1). `tempo` is divided into 4 levels. The rest are continuous between 0 and 1. Here, the user can specify whether they want us to consider a feature then they can select a value for that feature. 
+2. Features which weren't selected had a weight of 0 in distance calculation, and everything except `popularity` had equal weights. `popularity` was given a sixth of the sum of the weights for the other features. The weights were later scaled when calculating the distance.
+3. The distance calculation was done separately for `tempo` where the input were levels instead of number. The levels were mapped to the specific numbers to calculate distance, which was a product of 0,1 loss and absolute deviation. The other distance were calculated using the gower distance metric and finally combined with the `tempo` distance. 
+4. The results were then sorted and we selected the top 10 closest songs to display.
+
+## 3.3 Results
+ 
+We displayed the data in a table with a link to the spotify page for the tracks. To play the song however, a spotify account is needed.
+
+# 4 Lyrics
+
+In the "Lyrics" tab, users can search for the artist they are interested in. The App recalls the top 10 hit songs of the artist and focus on the lyrics. We go on to analyze the lyrics by showing wordcloud plot and sentiment analysis.
+
+## 4.1 Data
+
+The lyrics data comes from Genius API. Genius API collects millions of lyrics, millions of songs, and artist on the internet. We recall lyrics of top 10 hits for input artists using an api token and artist id. Then we clean the lyrics with regular expression to get tidy data for analysis.
+
+## 4.2 Method
+
+Wordcloud Tab:
+We manipulate the lyrics data, filtering out stop words and getting Wordcloud plot with `wordcloud2`.
+
+Sentiment Analysis Tab:
+Using `tidytext` we get the sentiment words indicating positive and negative moods. Show the result with barplot using ggplot.
+
+## 4.3 Results
+
+From Wordcloud tab, we can tell the most frequent used words in an artist's hit songs. This may indicate the habit of lyric writing, or maybe even recalls your memory of one of his hits! From Sentimental analysis tab, we will observe the relative word count of positive words and negative words.
+
+# 5 Big Five Personality Test
+
+In the 'Big Five Personality Test' tab, users can take the Big Five Personality Test and get recommended genres and songs based on the test results. The App provides user with information on:
+  - three best match genres based on the personality test result
+  - three songs from each genre respectively (9 songs in total)
+  - information about a song, including album image, album, artist
+  
+## 5.1 Data
+
+The data from this section are from Spotify API, a publication, and an open source website.
+
+The following data are sourced in real time from Spotify recommendation API, based on the genre matched:
+
+1.  songs recommended, including following information:
+    - name of the song
+    - uri of the song
+
+2.  album each song recommended belongs to, including following information:
+    - name of the album
+    - uri of the album
+    - url of the album cover image
+    - height of the album cover image
+    - width of the album cover image
+
+3.  artist of each song recommended, including following information:
+    - name of the artist
+    - uri of the artist
+
+The following data are sourced from the publication 'Personality traits and music genre preferences : How music taste varies over age groups' (B. Ferwerda, M. Tkalcic, and M. Schedl, 2017):
+
+1.  spearman's correlation between music genres and personality traits over age groups (saved in `Cor_test_genre.R`)
+
+The following data are sourced from the open source website personality-testing.info:
+
+1.  Big Five Personality Test questionnaire
+2.  personality score calculation method
+
+## 5.2 Method
+
+### 5.2.1 Recommendation method
+
+This tab aims to recommend genres and songs to users based on big five personality test results.
+
+Big five personality has five main labels to classify individuals’ behaviors and characteristics, as listed below:
+
+`Extraversion`: Which individuals engage with the outer world and experience ardor and other positive affections.
+`Agreeableness`: Which individuals value cooperation and social harmony, honesty, decency, and trustworthiness. Agreeable individuals also tend to have an sanguine sight of human nature.
+`Conscientiousness`: Which individuals esteem planning, have the quality of perseverance, and are accomplishment-oriented.
+`Neuroticism`: Which individuals experience negative affections and their propensity to emotionally overreact.
+`Openness to Experience`: Which individuals exhibit intellectual interest, self-awareness, and individualism/non-conformance.
+
+Researchers have showed relationships between music preference and personality using some tools like the Eysenck Personality Questionnaire and neuroticism extraversion openness personality inventory. In this tab we use big five personality test to recommend with a research done by Ferwerda et al. which calculated Spearman’s correlation values between music genres and big five personality traits over age groups (18 genres in total), and analyzed 1415 users with their music listening histories.
+
+Uses should first select their age groups and then answer our use 44 questions. Each answer has 1 to 5 points that indicates "disagree strongly", "disagree a little", "neither agree nor disagree", "agree a little", "agree strongly" respectively. We can calculate individual’s personality scores for each five labels and then multiply genres-and-personality correlation matrix to calculate the scores for each genre. After we get the genre scores, we arrange them in descending order and select the top three genres with the highest scores. With the recommendation genres in hand, we can call Spotify's recommendation API to get the songs from the designated genres and the information related to the songs like artists and albums as well.
+
+### 5.2.2 Spotify API helper functions
+
+1.  `get_rec.R`
+    - extract name and uri of songs
+    - extract name and uri of albums
+    - extract url, height and width of the album covers
+    - extract name and uri of artists
+    
+## 5.3 Results
+
+Refer to "Big Five Personality Test" tab of the Shiny App. Once users select a age group, answer all the questions and click `SEE RESULT`, the recommendation results will show with the following information:
+
+  - top three recommended genres
+  - three randomly recommended songs with album and aritist information based on the first genre
+  - three randomly recommended songs with album and aritist information based on the second genre
+  - three randomly recommended songs with album and aritist information based on the third genre
+
+# 6 Developer Notes
+
+## 6.1 Limitations and Future developments
+
+### 6.1.1 Musician tab:
+
+  - If we were more familiar with html and css, potentially there will much more flexibilities in terms of the ui design. There are a number of places where the current design isn't ideal. For example, the album image would be too large if the App is launched in full screen. 
+  - If we had more time, we would also implement widgets to show "loading" status while information are being loaded in the App so that users know that they need to wait
+  - Currently there are repeated codings in this section. For example, to render the histogram plots, similar codings were repeated three times in the codings to account for different situations. Ideally we should create a function within Shiny for this and call the function with slightly different parameters. It seems that function calls related to Shiny UI are not as strightforward as writing normal functions. This is something for further development.
+
+### 6.1.2 Song Search tab:
+
+  - The procedure is very flexible and is designed to always give the best 10 results no matter how high the distance measure is, this can happen if the user requests combinations such as low energy happy feeling metal song with high acousticness. Further improvement can be done here, such as giving a message to warn the user of the possible results in case of such input. This would require classifying the 'weird' inputs.
+  - Implementation of the features `mode` and `key` can also help musicians or anyone who knows what they are doing to find songs from a technical standpoint, though the `mode` features only include major or minor, which is generally not a lot helpful for musicians(there are many more modes).
+  - The next step would be to create a playlist for the user. The user after listening to songs, may decide to add it to their library. 
+  - One change, we can try to make here is that instead of getting the top 10 songs, we can fix a distance threshold and display songs which are within that threshold, this would require proper scaling of the distance metric and extensive testing for each category/genre as well.
+
+### 6.1.3 Lyrics tab:
+
+  - We just apply basic text mining to the lyrics. More further work might be focusing on more advanced text analysis. For example, take account the habit of song writing and singer preference.
+  - Include the wordcloud plot and sentiment analysis of comparison between popular songs and ones not so popular.
+
+### 6.1.4 Big Five Personality Test tab:
+
+  - We only show song information without providing previewing function.
+  - Genres-and-personality correlation matrix only include limited genres without covering all the genres as in Spotify.
+  
+### 6.1.5 Overall
+
+  - After we've combined our work together, we realized that packages used by other members might mask the functions we are using and create errors. Also, a number of packages are loaded sometimes in App environment, sometimes in function R script files. Some of them are overlapping. 
+  - If we had more time, we will further investigate what is the best way to arrange loading these packages to avoid loading the same package multiple times, and also to find out the most efficient wayt to ensure we can use the function in the appropriate package
+  
+## 6.2 Notes while using the App
+
+1. Due to instability of Spotify API authorization process, sometimes the App might stop running and quit with an error: "Error in curl::curl_fetch_memory(url, handle = handle) :   Error in the HTTP2 framing layer"
+
+    - From research we noted that this is a known existing issue with spotify API. Refer to the following sources: [source 1](https://github.com/tiagomendesdantas/Rspotify/issues/3), [source 1](https://github.com/cloudyr/googleCloudStorageR/issues/71), [source 3](https://stackoverflow.com/questions/42495967/stream-error-in-the-http-2-framing-layer-spotify-api-in-r-script)
+    - If this error happens, please relaunch the App and it should work fine
+
+2. For Musician tab:
+
+    - Depending on internet stability, it could take a while for results to be downloaded and presented in the App after users click "Search"
+    - It could take a few seconds to refres the App when users select the "Tracks" tab
+
+
+# 7 Key Refereces
+
+1. [Spotify API](https://developer.spotify.com/documentation/web-api/)
+
+2. [How to set up Spotify API](https://www.rcharlie.com/post/fitter-happier/)
+
+3. [Inspiration for Musician tab](https://joelcponte.shinyapps.io/spotifyapp/)
+
+4. [plotly with shiny](https://plot.ly/r/shiny-tutorial/)
+
+5. [Shiny progress bar](https://shiny.rstudio.com/articles/progress.html)
+
+6. [individual-symphony](https://individualsymphony.com/en/)
+
+7. [personalitybasedsong](https://personalitybasedsong.shinyapps.io/TraitSong/)
+
+8. B. Ferwerda, M. Tkalcic, and M. Schedl, “Personality traits and music genre
+preferences : How music taste varies over age groups,” vol. 1922, 2017, pp. 16–20.
+
+9. J. L. Pearson and S. J. Dollinger, “Music preference correlates of jungian types,”
+Personality and Individual Differences, vol. 36, no. 5, pp. 1005–1008, 2004.
+
+10. L. R. Goldberg, “An alternative “description of personality”: The big-five factor
+structure.” Journal of Personality and Social Psychology, vol. 59, no. 6, pp. 1216—
+-1229, 1990.
+
+11. [personality-testing.info](https://openpsychometrics.org/)
